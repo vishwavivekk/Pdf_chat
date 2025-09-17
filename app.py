@@ -4,19 +4,17 @@
 # In[1]:
 
 
-get_ipython().system('pip install PyPDF2')
+
 
 
 # In[2]:
 
 
-get_ipython().system('pip install langchain streamlit python-dotenv PyPDF2 faiss-cpu openai huggingface_hub')
 
 
 # In[3]:
 
 
-get_ipython().system('pip install -U langchain-community')
 
 
 # In[ ]:
