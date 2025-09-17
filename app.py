@@ -9,6 +9,32 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 import os
 import google.generativeai as genai
+with st.sidebar:
+        st.subheader("Your documents")
+        pdf_docs = st.file_uploader(
+            "Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
+        if st.button("Process"):
+            if not pdf_docs:
+                st.warning("Please upload at least one PDF file.")
+            else:
+                with st.spinner("Processing"):
+                    # get pdf text
+                    raw_text = get_pdf_text(pdf_docs)
+
+                    # get the text chunks
+                    text_chunks = get_text_chunks(raw_text)
+
+                    # --- ADD THIS CHECK ---
+                    if not text_chunks:
+                        st.error("Could not extract text from the PDFs. Please try different documents.")
+                    else:
+                        # create vector store
+                        vectorstore = get_vectorstore(text_chunks)
+
+                        # create conversation chain
+                        st.session_state.conversation = get_conversation_chain(
+                            vectorstore)
+                        st.success("Processing complete! You can now ask questions.")
 
 # --- HTML Templates (kept from your original code) ---
 css = """
