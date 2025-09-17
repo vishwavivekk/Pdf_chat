@@ -1,47 +1,16 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
-
-
-
-# In[2]:
-
-
-
-
-# In[3]:
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[4]:
-
-
 import streamlit as st
 from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 from langchain.text_splitter import CharacterTextSplitter
-# Updated imports for embeddings from langchain-community
-from langchain_community.embeddings import OpenAIEmbeddings, HuggingFaceInstructEmbeddings
-# Updated import for vector stores
+# --- Gemini/Google Imports ---
+from langchain_google_genai import GoogleGenerativeAIEmbeddings, ChatGoogleGenerativeAI
 from langchain_community.vectorstores import FAISS
-from langchain.chat_models import ChatOpenAI
 from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
-# from htmlTemplates import css, bot_template, user_template  # Commented out problematic import
-# Updated import for HuggingFaceHub
-from langchain_community.llms import HuggingFaceHub
+import os
+import google.generativeai as genai
 
-# Create the HTML templates directly in this file instead of importing them
+# --- HTML Templates (kept from your original code) ---
 css = """
 /* Add your CSS styling here */
 .chat-message {
@@ -73,17 +42,7 @@ user_template = """
 </div>
 """
 
-# Note: You may need to run "pip install -U langchain-community" in your environment
-
-
-# In[ ]:
-
-
-
-
-
-# In[5]:
-
+# --- Core Functions ---
 
 def get_pdf_text(pdf_docs):
     text = ""
@@ -106,16 +65,16 @@ def get_text_chunks(text):
 
 
 def get_vectorstore(text_chunks):
-    embeddings = OpenAIEmbeddings()
-    # embeddings = HuggingFaceInstructEmbeddings(model_name="hkunlp/instructor-xl")
+    # Use Google's embedding model
+    embeddings = GoogleGenerativeAIEmbeddings(model="models/embedding-001")
     vectorstore = FAISS.from_texts(texts=text_chunks, embedding=embeddings)
     return vectorstore
 
 
 def get_conversation_chain(vectorstore):
-    llm = ChatOpenAI()
-    # llm = HuggingFaceHub(repo_id="google/flan-t5-xxl", model_kwargs={"temperature":0.5, "max_length":512})
-
+    # Use the Gemini Chat model
+    llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest", temperature=0.7)
+    
     memory = ConversationBufferMemory(
         memory_key='chat_history', return_messages=True)
     conversation_chain = ConversationalRetrievalChain.from_llm(
@@ -127,6 +86,11 @@ def get_conversation_chain(vectorstore):
 
 
 def handle_userinput(user_question):
+    # Check if the conversation chain is initialized
+    if st.session_state.conversation is None:
+        st.warning("Please upload and process your documents before asking a question.")
+        return
+        
     response = st.session_state.conversation({'question': user_question})
     st.session_state.chat_history = response['chat_history']
 
@@ -141,6 +105,14 @@ def handle_userinput(user_question):
 
 def main():
     load_dotenv()
+    
+    # Configure the Google API Key from Streamlit secrets
+    try:
+        genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
+    except Exception as e:
+        st.error("Error configuring Google API. Have you set your GOOGLE_API_KEY in Streamlit secrets?")
+        st.stop()
+
     st.set_page_config(page_title="Chat with multiple PDFs",
                        page_icon=":books:")
     st.write(css, unsafe_allow_html=True)
@@ -150,7 +122,7 @@ def main():
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = None
 
-    st.header("Chat with multiple PDFs :books:")
+    st.header("Chat with multiple PDFs using Gemini :books:")
     user_question = st.text_input("Ask a question about your documents:")
     if user_question:
         handle_userinput(user_question)
@@ -160,58 +132,24 @@ def main():
         pdf_docs = st.file_uploader(
             "Upload your PDFs here and click on 'Process'", accept_multiple_files=True)
         if st.button("Process"):
-            with st.spinner("Processing"):
-                # get pdf text
-                raw_text = get_pdf_text(pdf_docs)
+            if not pdf_docs:
+                st.warning("Please upload at least one PDF file.")
+            else:
+                with st.spinner("Processing"):
+                    # get pdf text
+                    raw_text = get_pdf_text(pdf_docs)
 
-                # get the text chunks
-                text_chunks = get_text_chunks(raw_text)
+                    # get the text chunks
+                    text_chunks = get_text_chunks(raw_text)
 
-                # create vector store
-                vectorstore = get_vectorstore(text_chunks)
+                    # create vector store
+                    vectorstore = get_vectorstore(text_chunks)
 
-                # create conversation chain
-                st.session_state.conversation = get_conversation_chain(
-                    vectorstore)
+                    # create conversation chain
+                    st.session_state.conversation = get_conversation_chain(
+                        vectorstore)
+                    st.success("Processing complete! You can now ask questions.")
 
 
 if __name__ == '__main__':
     main()
-
-
-# In[6]:
-
-
-import requests
-import json
-
-
-url = "http://172.16.112.140:8009/vvn/PlotsGeoJson"
-
-try:
-   
-    response = requests.get(url)
-
-   
-    response.raise_for_status()
-
-    
-    geojson_data = response.json()
-
-   
-    print("Successfully fetched GeoJSON data!")
-    
-    with open("output.geojson", "w") as f:
-        json.dump(geojson_data, f, indent=2)
-    print("Data saved to output.geojson")
-
-
-except requests.exceptions.RequestException as e:
-    print(f"An error occurred: {e}")
-
-
-# In[ ]:
-
-
-
-
