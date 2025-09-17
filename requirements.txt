@@ -1,5 +1,5 @@
 streamlit
-PyPDF2
+pypdf
 langchain
 python-dotenv
 faiss-cpu
@@ -104,4 +104,5 @@ watchdog
 yarl
 zstandard
 google-generativeai
+
 
