@@ -103,3 +103,5 @@ urllib3
 watchdog
 yarl
 zstandard
+google-generativeai
+
