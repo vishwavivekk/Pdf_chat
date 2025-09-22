@@ -13,22 +13,32 @@ import re
 import random
 # ---------------- Basic Conversation Handling ---------------- #
 
-def is_greeting(text):
-    """Check if the message is a greeting"""
+def is_greeting(text: str) -> bool:
+    """
+    Check if the message contains a greeting as a whole word or phrase.
+    Uses word-boundary regex so 'which' won't match 'hi'.
+    """
     greetings = [
-        'hi', 'hello', 'hey', 'good morning', 'good afternoon', 
-        'good evening', 'howdy', 'what\'s up', 'how are you',
-        'greetings', 'salutations', 'hola', 'namaste'
+        "hi", "hello", "hey", "good morning", "good afternoon",
+        "good evening", "howdy", "what's up", "how are you",
+        "greetings", "salutations", "hola", "namaste"
     ]
-    return any(greeting in text.lower() for greeting in greetings)
+    text = text or ""
+    # build regex that matches any greeting as a whole word/phrase
+    pattern = r'\b(?:' + '|'.join(re.escape(g) for g in greetings) + r')\b'
+    return bool(re.search(pattern, text, flags=re.IGNORECASE))
 
-def is_goodbye(text):
-    """Check if the message is a goodbye"""
+def is_goodbye(text: str) -> bool:
+    """
+    Check if the message contains a goodbye as a whole word or phrase.
+    """
     goodbyes = [
-        'bye', 'goodbye', 'see you', 'farewell', 'take care',
-        'talk to you later', 'ttyl', 'catch you later', 'adios'
+        "bye", "goodbye", "see you", "farewell", "take care",
+        "talk to you later", "ttyl", "catch you later", "adios"
     ]
-    return any(goodbye in text.lower() for goodbye in goodbyes)
+    text = text or ""
+    pattern = r'\b(?:' + '|'.join(re.escape(g) for g in goodbyes) + r')\b'
+    return bool(re.search(pattern, text, flags=re.IGNORECASE))
 
 def get_basic_response(text):
     """Generate basic conversational responses"""
