@@ -1,73 +1,95 @@
-# htmlTemplates.py
-
 css = """
 <style>
+body, .stApp {
+    background: #f6f7f9;
+    font-family: 'Inter', 'Roboto', Arial, sans-serif;
+}
+.main .block-container {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 4px 32px rgba(56,56,75,0.08);
+    margin: 18px auto;
+    padding: 32px 24px;
+}
+h1, .stTitle {
+    color: #22223b;
+    font-weight: 600;
+    font-size: 2rem;
+    margin-bottom: 0.8rem;
+}
 .chat-message {
+    padding: 1rem;
+    border-radius: 10px;
+    margin-bottom: 0.7rem;
     display: flex;
     align-items: flex-start;
-    margin: 1rem 0;
-    font-family: 'Segoe UI', sans-serif;
+    background: #f5f6fa;
+    box-shadow: 0 1px 8px rgba(40,54,74,0.05);
 }
-
-.chat-message .avatar {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    overflow: hidden;
-    margin-right: 0.75rem;
-    flex-shrink: 0;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+.chat-message.bot {
+    background: #e9ecef;
 }
-
 .chat-message.user {
-    justify-content: flex-end;
+    background: #f9fcff;
 }
-
-.chat-message.user .avatar {
-    order: 2;
-    margin-left: 0.75rem;
-    margin-right: 0;
+.chat-message .avatar {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #f0f3f8;
+    color: #495464;
+    font-size: 1.2rem;
+    margin-right: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
-
 .chat-message .message {
-    max-width: 70%;
-    padding: 0.85rem 1.2rem;
-    border-radius: 1rem;
-    line-height: 1.4;
-    font-size: 0.95rem;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+    flex: 1;
+    color: #22223b;
+    font-size: 1rem;
+    font-weight: 400;
 }
-
-.chat-message.bot .message {
-    background-color: #f1f1f1;
-    color: #333;
-    border-bottom-left-radius: 0.3rem;
+.stTextInput > div > div > input {
+    background: #e9ecef;
+    border: 1px solid #dde1e7;
+    border-radius: 7px;
+    padding: 0.6rem 1rem;
+    font-size: 1rem;
+    color: #22223b;
 }
-
-.chat-message.user .message {
-    background-color: #0078ff;
-    color: white;
-    border-bottom-right-radius: 0.3rem;
+.stButton > button {
+    background-color: #f6f7f9;
+    color: #22223b;
+    border: 1px solid #dde1e7;
+    border-radius: 7px;
+    padding: 0.5rem 1.5rem;
+    font-weight: 500;
+    transition: background 0.17s;
+}
+.stButton > button:hover {
+    background-color: #e2e6ea;
+    border-color: #a1a5b0;
+}
+.stSuccess, .stError, .stWarning, .stInfo {
+    border-radius: 8px;
+    font-size: 1rem;
+    padding: 0.8rem;
+    color: #22223b;
 }
 </style>
 """
 
 bot_template = """
 <div class="chat-message bot">
-    <div class="avatar">
-        <img src="https://i.ibb.co/cN0nmSj/Screenshot-2023-05-28-at-02-37-21.png" 
-             style="width:100%; height:100%; object-fit: cover;">
-    </div>
+    <div class="avatar">🤖</div>
     <div class="message">{{MSG}}</div>
 </div>
 """
 
 user_template = """
 <div class="chat-message user">
-    <div class="avatar">
-        <img src="https://i.ibb.co/rdZC7LZ/Photo-logo-1.png" 
-             style="width:100%; height:100%; object-fit: cover;">
-    </div>    
+    <div class="avatar">👤</div>
     <div class="message">{{MSG}}</div>
 </div>
 """
