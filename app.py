@@ -10,7 +10,7 @@ from langchain.memory import ConversationBufferMemory
 from langchain.chains import ConversationalRetrievalChain
 from htmlTemplates import css, bot_template, user_template
 import re
-
+import random
 # ---------------- Basic Conversation Handling ---------------- #
 
 def is_greeting(text):
@@ -140,6 +140,18 @@ def create_conversation_chains(vectorstore):
 
 # ---------------- Chat Handling ---------------- #
 
+def is_unhelpful_answer(answer: str) -> bool:
+    """Detect unhelpful answers like 'I don't know'."""
+    bad_phrases = [
+        "i don't know", 
+        "sorry", 
+        "no information", 
+        "not sure", 
+        "i cannot find"
+    ]
+    return any(p in answer.lower() for p in bad_phrases)
+
+
 def handle_user_query(query):
     """Process user query with basic conversation handling."""
     if not query.strip():
@@ -174,9 +186,10 @@ def handle_user_query(query):
         )
 
         if strict_result.get("source_documents") and len(strict_result["source_documents"]) > 0:
-            bot_msg = type("AIMessage", (), {"type": "ai", "content": strict_result["answer"]})()
-            st.session_state.chat_history.append(bot_msg)
-            return
+            if not is_unhelpful_answer(strict_result["answer"]):
+                bot_msg = type("AIMessage", (), {"type": "ai", "content": strict_result["answer"]})()
+                st.session_state.chat_history.append(bot_msg)
+                return
     except Exception as e:
         st.error(f"Error in strict search: {e}")
 
@@ -187,30 +200,45 @@ def handle_user_query(query):
         )
 
         if fallback_result.get("source_documents") and len(fallback_result["source_documents"]) > 0:
-            bot_msg = type("AIMessage", (), {"type": "ai", "content": fallback_result["answer"]})()
-            st.session_state.chat_history.append(bot_msg)
-            return
+            if not is_unhelpful_answer(fallback_result["answer"]):
+                bot_msg = type("AIMessage", (), {"type": "ai", "content": fallback_result["answer"]})()
+                st.session_state.chat_history.append(bot_msg)
+                return
     except Exception as e:
         st.error(f"Error in fallback search: {e}")
 
-    # No answer found - provide helpful suggestions
+    # No answer found - provide helpful suggestions + clarifying question
+    clarifying_question = generate_clarifying_question(query)
     suggestions = generate_suggestions(query)
-    response = f"""🤔 I couldn't find specific information about that in your documents. Let me help you find what you're looking for!
 
-**Here are some suggestions:**
-• {suggestions[0]}
-• {suggestions[1]}
-• {suggestions[2]}
+    response = f"""🤔 I couldn't find specific information about **{query}** in your documents.  
 
-**You could try asking:**
-• "What topics are covered in the document?"
-• "Can you summarize the main points?"
-• "What does the document say about [specific keyword]?"
+**Maybe you can help me by clarifying:**  
+👉 {clarifying_question}  
 
-Feel free to rephrase your question or ask about something more specific! 😊"""
+**Here are some tips to refine your question:**  
+• {suggestions[0]}  
+• {suggestions[1]}  
+• {suggestions[2]}  
+
+**Example follow-ups you could try:**  
+• "What topics are covered in the document?"  
+• "Can you summarize the main points?"  
+• "What does the document say about [specific keyword]?"  
+"""
 
     bot_msg = type("AIMessage", (), {"type": "ai", "content": response})()
     st.session_state.chat_history.append(bot_msg)
+
+def generate_clarifying_question(query):
+    """Generate a clarifying question when no answer is found."""
+    clarifications = [
+        f"Could you clarify what aspect of '{query}' you’re most interested in?",
+        f"Do you mean '{query}' in terms of definitions, examples, or applications?",
+        f"Are you asking about the general concept of '{query}' or something specific in your documents?",
+        f"Would you like me to summarize related topics to '{query}' from the documents?",
+    ]
+    return random.choice(clarifications)
 
 def render_chat():
     """Render chat history in a container with limited height."""
