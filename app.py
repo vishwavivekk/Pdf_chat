@@ -1,16 +1,17 @@
-
 import os
 import streamlit as st
 from dotenv import load_dotenv
 from pypdf import PdfReader
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings, ChatOpenAI
 from langchain_community.vectorstores import FAISS
-from langchain.memory import ConversationBufferMemory
-from langchain.chains import ConversationalRetrievalChain
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_core.runnables import RunnablePassthrough
 from htmlTemplates import css, bot_template, user_template
 import re
 import random
+
 # ---------------- Basic Conversation Handling ---------------- #
 
 def is_greeting(text: str) -> bool:
@@ -24,7 +25,6 @@ def is_greeting(text: str) -> bool:
         "greetings", "salutations", "hola", "namaste"
     ]
     text = text or ""
-    # build regex that matches any greeting as a whole word/phrase
     pattern = r'\b(?:' + '|'.join(re.escape(g) for g in greetings) + r')\b'
     return bool(re.search(pattern, text, flags=re.IGNORECASE))
 
@@ -66,7 +66,6 @@ def generate_suggestions(query, vectorstore=None):
         "Consider asking about a specific topic or concept from your documents"
     ]
 
-    # Add contextual suggestions based on query
     if 'what' in query.lower():
         suggestions.append("Try asking 'How does [topic] work?' or 'Why is [topic] important?'")
     elif 'how' in query.lower():
@@ -107,46 +106,102 @@ def build_vectorstore(chunks):
     embeddings = OpenAIEmbeddings()
     return FAISS.from_texts(chunks, embeddings)
 
-# ---------------- Conversation Setup ---------------- #
+# ---------------- Modern RAG Setup ---------------- #
+
+def format_docs(docs):
+    """Format retrieved documents into a single string."""
+    return "\n\n".join(doc.page_content for doc in docs)
+
+def format_chat_history_for_prompt(chat_history):
+    """Format chat history for inclusion in prompt."""
+    if not chat_history:
+        return "No previous conversation."
+    
+    formatted = []
+    for msg in chat_history:
+        if msg.type == "human":
+            formatted.append(f"Human: {msg.content}")
+        else:
+            formatted.append(f"Assistant: {msg.content}")
+    return "\n".join(formatted[-6:])  # Only include last 6 messages (3 exchanges)
+
+def create_rag_chain(vectorstore, search_type="similarity", threshold=None):
+    """Create a modern RAG chain using LCEL."""
+    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
+    
+    # Create retriever
+    if search_type == "similarity_score_threshold" and threshold:
+        retriever = vectorstore.as_retriever(
+            search_type="similarity_score_threshold",
+            search_kwargs={"score_threshold": threshold}
+        )
+    else:
+        retriever = vectorstore.as_retriever(
+            search_type="similarity",
+            search_kwargs={"k": 3}
+        )
+    
+    # Create prompt template
+    template = """You are a helpful AI assistant answering questions based on the provided context from documents.
+
+Chat History:
+{chat_history}
+
+Context from documents:
+{context}
+
+Current Question: {question}
+
+Instructions:
+- Answer the question based on the context provided
+- If the context doesn't contain relevant information, say so clearly
+- Be conversational and helpful
+- Reference specific parts of the context when possible
+- Provide comprehensive answers with details from the context
+
+Answer:"""
+
+    prompt = ChatPromptTemplate.from_template(template)
+    
+    # Create a simple function-based chain
+    def rag_chain(inputs):
+        question = inputs["question"]
+        chat_history = inputs["chat_history"]
+        
+        # Get relevant documents
+        docs = retriever.invoke(question)
+        context = format_docs(docs)
+        
+        # Format prompt
+        messages = prompt.format_messages(
+            context=context,
+            question=question,
+            chat_history=chat_history
+        )
+        
+        # Get response
+        response = llm.invoke(messages)
+        return response.content
+    
+    return rag_chain, retriever
 
 def create_conversation_chains(vectorstore):
-    """Create strict and fallback retriever chains with memory."""
-    llm = ChatOpenAI(model="gpt-4o-mini", temperature=0.1)
-    memory = ConversationBufferMemory(
-        memory_key="chat_history",
-        return_messages=True,
-        output_key="answer"
+    """Create strict and fallback RAG chains."""
+    strict_chain, strict_retriever = create_rag_chain(
+        vectorstore, 
+        search_type="similarity_score_threshold", 
+        threshold=0.65
     )
-
-    # Strict retriever
-    strict_retriever = vectorstore.as_retriever(
-        search_type="similarity_score_threshold",
-        search_kwargs={"score_threshold": 0.65}
+    
+    fallback_chain, fallback_retriever = create_rag_chain(
+        vectorstore, 
+        search_type="similarity"
     )
-
-    # Fallback retriever
-    fallback_retriever = vectorstore.as_retriever(
-        search_type="similarity",
-        search_kwargs={"k": 3}
-    )
-
-    strict_chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=strict_retriever,
-        memory=memory,
-        return_source_documents=True,
-        output_key="answer"
-    )
-
-    fallback_chain = ConversationalRetrievalChain.from_llm(
-        llm=llm,
-        retriever=fallback_retriever,
-        memory=memory,
-        return_source_documents=True,
-        output_key="answer"
-    )
-
-    return {"strict": strict_chain, "fallback": fallback_chain}
+    
+    return {
+        "strict": {"chain": strict_chain, "retriever": strict_retriever},
+        "fallback": {"chain": fallback_chain, "retriever": fallback_retriever}
+    }
 
 # ---------------- Chat Handling ---------------- #
 
@@ -157,17 +212,18 @@ def is_unhelpful_answer(answer: str) -> bool:
         "sorry", 
         "no information", 
         "not sure", 
-        "i cannot find"
+        "i cannot find",
+        "doesn't contain",
+        "no relevant information"
     ]
     return any(p in answer.lower() for p in bad_phrases)
-
 
 def handle_user_query(query):
     """Process user query with basic conversation handling."""
     if not query.strip():
         return
 
-    # Add user message to chat history first
+    # Initialize chat history
     if "chat_history" not in st.session_state:
         st.session_state.chat_history = []
 
@@ -189,35 +245,39 @@ def handle_user_query(query):
         st.session_state.chat_history.append(bot_msg)
         return
 
+    # Format chat history
+    chat_history_str = format_chat_history_for_prompt(st.session_state.chat_history[:-1])
+
     # Try strict retriever
     try:
-        strict_result = st.session_state.conversation["strict"](
-            {"question": query, "chat_history": st.session_state.chat_history[:-1]}  # Exclude current user message
-        )
-
-        if strict_result.get("source_documents") and len(strict_result["source_documents"]) > 0:
-            if not is_unhelpful_answer(strict_result["answer"]):
-                bot_msg = type("AIMessage", (), {"type": "ai", "content": strict_result["answer"]})()
-                st.session_state.chat_history.append(bot_msg)
-                return
+        # Invoke chain with proper input format
+        answer = st.session_state.conversation["strict"]["chain"]({
+            "question": query,
+            "chat_history": chat_history_str
+        })
+        
+        if answer and not is_unhelpful_answer(answer):
+            bot_msg = type("AIMessage", (), {"type": "ai", "content": answer})()
+            st.session_state.chat_history.append(bot_msg)
+            return
     except Exception as e:
-        st.error(f"Error in strict search: {e}")
+        print(f"Error in strict search: {e}")
 
     # Try fallback retriever
     try:
-        fallback_result = st.session_state.conversation["fallback"](
-            {"question": query, "chat_history": st.session_state.chat_history[:-1]}
-        )
-
-        if fallback_result.get("source_documents") and len(fallback_result["source_documents"]) > 0:
-            if not is_unhelpful_answer(fallback_result["answer"]):
-                bot_msg = type("AIMessage", (), {"type": "ai", "content": fallback_result["answer"]})()
-                st.session_state.chat_history.append(bot_msg)
-                return
+        answer = st.session_state.conversation["fallback"]["chain"]({
+            "question": query,
+            "chat_history": chat_history_str
+        })
+        
+        if answer and not is_unhelpful_answer(answer):
+            bot_msg = type("AIMessage", (), {"type": "ai", "content": answer})()
+            st.session_state.chat_history.append(bot_msg)
+            return
     except Exception as e:
-        st.error(f"Error in fallback search: {e}")
+        print(f"Error in fallback search: {e}")
 
-    # No answer found - provide helpful suggestions + clarifying question
+    # No answer found - provide helpful suggestions
     clarifying_question = generate_clarifying_question(query)
     suggestions = generate_suggestions(query)
 
@@ -243,7 +303,7 @@ def handle_user_query(query):
 def generate_clarifying_question(query):
     """Generate a clarifying question when no answer is found."""
     clarifications = [
-        f"Could you clarify what aspect of '{query}' you’re most interested in?",
+        f"Could you clarify what aspect of '{query}' you're most interested in?",
         f"Do you mean '{query}' in terms of definitions, examples, or applications?",
         f"Are you asking about the general concept of '{query}' or something specific in your documents?",
         f"Would you like me to summarize related topics to '{query}' from the documents?",
@@ -251,12 +311,10 @@ def generate_clarifying_question(query):
     return random.choice(clarifications)
 
 def render_chat():
-    """Render chat history in a container with limited height."""
-    # Create a container for chat messages with fixed height
+    """Render chat history in a container."""
     chat_container = st.container()
 
     with chat_container:
-        # Display messages in reverse order (newest at bottom)
         for i, msg in enumerate(st.session_state.chat_history):
             if msg.type == "human":
                 st.write(user_template.replace("{{MSG}}", msg.content), unsafe_allow_html=True)
@@ -309,10 +367,9 @@ def main():
         # Chat interface
         st.markdown("---")
 
-        # Display chat history in a scrollable container
+        # Display chat history
         if st.session_state.chat_history:
             st.markdown("### 💬 Conversation")
-            # Create a scrollable area for chat
             with st.container():
                 render_chat()
         else:
@@ -322,12 +379,11 @@ def main():
         # Chat input at bottom
         st.markdown("---")
 
-        # Use columns for input and buttons
         if query := st.chat_input("💭 Ask me anything about your documents..."):
             handle_user_query(query)
             st.rerun()
 
-        # Optional clear button
+        # Clear button
         if st.button("🗑️ Clear Chat"):
             clear_chat()
             st.rerun()
@@ -360,7 +416,7 @@ def main():
                         vectorstore = build_vectorstore(chunks)
                         st.session_state.conversation = create_conversation_chains(vectorstore)
 
-                        # Clear previous chat when new documents are processed
+                        # Clear previous chat
                         st.session_state.chat_history = []
 
                         st.success("✅ Documents processed successfully!")
