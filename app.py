@@ -11,6 +11,22 @@ from langchain_core.runnables import RunnablePassthrough
 from htmlTemplates import css, bot_template, user_template
 import re
 import random
+st.set_page_config(
+    page_title="Manufacturing Cluster Intelligence",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+hide_streamlit_style = """
+    <style>
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    div[data-testid="stToolbar"] { visibility: hidden; height: 0px; }
+    </style>
+"""
+
+st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 # ---------------- Basic Conversation Handling ---------------- #
 
